@@ -114,7 +114,7 @@ void Get_localized_name(PA_PluginParameters params) {
             NSURL *url = [NSURL fileURLWithPath:str];
             _getKey(returnValue, url, "localizedName", NSURLLocalizedNameKey);
             _getKey(returnValue, url, "localizedLabel", NSURLLocalizedLabelKey);
-//            _getKey(returnValue, url, "localizedTypeDescription", NSURLLocalizedTypeDescriptionKey);
+            _getKey(returnValue, url, "localizedTypeDescription", NSURLLocalizedTypeDescriptionKey);
 //            _getKey(returnValue, url, "localizedFormatDescription", NSURLVolumeLocalizedFormatDescriptionKey);
             NSString *pathExtension = [str pathExtension];
             if(pathExtension) {
