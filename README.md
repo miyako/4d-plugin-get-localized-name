@@ -11,7 +11,8 @@ $name:=Get localized name($file)
 
 ```json
 {
- "localizedName":"デスクトップ"
+ "localizedName":"デスクトップ",
+ "localizedTypeDescription ":"フォルダ"
 }
 
 {
@@ -24,6 +25,11 @@ $name:=Get localized name($file)
 ### Windows
 
 ```json
+{
+ "localizedName":"デスクトップ",
+ "localizedTypeDescription ":"ファイル フォルダー"
+}
+
 {
  "localizedDescription":"XLSX ファイル"
 }
