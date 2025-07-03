@@ -102,7 +102,7 @@ void Get_localized_name(PA_PluginParameters params) {
                           FILE_ATTRIBUTE_NORMAL,
                           &shfi,
                           sizeof(SHFILEINFO),
-                          SHGFI_DISPLAYNAME | SHGFI_TYPENAME | SHGFI_USEFILEATTRIBUTES
+                          SHGFI_DISPLAYNAME | SHGFI_TYPENAME | (itemClass == object_class_file ? SHGFI_USEFILEATTRIBUTES : 0)
                           );
             
             if (wcslen(shfi.szDisplayName) != 0) {
