@@ -18,6 +18,6 @@ $name:=Get localized name($file)
 ```
 
 ```json
-{"localizedName":"spreadsheet.xlsx","localizedDescription":"Office Open XMLスプレッドシート"}
+{"localizedName":"lib.xlsx","localizedTypeDescription":"Microsoft Excel Workbook (.xlsx)","localizedDescription":"Office Open XMLスプレッドシート"}
 ```
 
