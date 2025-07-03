@@ -35,6 +35,7 @@ void PluginMain(PA_long32 selector, PA_PluginParameters params) {
 
 #pragma mark -
 
+#if VERSIONMAC
 static void _getKey(PA_ObjectRef returnValue, NSURL *url, const char *property, NSURLResourceKey key) {
     
     @autoreleasepool {
@@ -47,6 +48,7 @@ static void _getKey(PA_ObjectRef returnValue, NSURL *url, const char *property, 
         }
     }
 }
+#endif
 
 void Get_localized_name(PA_PluginParameters params) {
 
@@ -103,8 +105,10 @@ void Get_localized_name(PA_PluginParameters params) {
                           SHGFI_DISPLAYNAME | SHGFI_TYPENAME
                           );
             
-            ob_set_a(returnValue, L"localizedName", (const wchar_t *)shfi.szDisplayName);
-            ob_set_a(returnValue, L"localizedLabel", (const wchar_t *)shfi.szTypeName);
+            if (wcslen(shfi.szDisplayName) != 0) {
+                ob_set_a(returnValue, L"localizedName", (const wchar_t*)shfi.szDisplayName);
+            }
+            //ob_set_a(returnValue, L"localizedLabel", (const wchar_t *)shfi.szTypeName);
 
 #endif
             

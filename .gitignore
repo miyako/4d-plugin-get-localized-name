@@ -1,2 +1,6 @@
 test/userPreferences.*
 build/*
+.vs/*
+test/Plugins/Name.bundle/Contents/Windows64/Name.exp
+test/Plugins/Name.bundle/Contents/Windows64/Name.lib
+Objs/*
