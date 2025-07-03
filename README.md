@@ -16,7 +16,7 @@ $name:=Get localized name($file)
 }
 
 {
- "localizedName":"lib.xlsx",
+ "localizedName":"spreadsheet.xlsx",
  "localizedTypeDescription":"Microsoft Excel Workbook (.xlsx)",
  "localizedDescription":"Office Open XMLスプレッドシート"
 }
@@ -31,6 +31,8 @@ $name:=Get localized name($file)
 }
 
 {
+ "localizedName":"spreadsheet.xlsx",
+ "localizedTypeDescription":"XLSX ファイル"
  "localizedDescription":"XLSX ファイル"
 }
 ```
