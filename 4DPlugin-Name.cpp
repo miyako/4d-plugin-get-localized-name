@@ -108,7 +108,9 @@ void Get_localized_name(PA_PluginParameters params) {
             if (wcslen(shfi.szDisplayName) != 0) {
                 ob_set_a(returnValue, L"localizedName", (const wchar_t*)shfi.szDisplayName);
             }
-            //ob_set_a(returnValue, L"localizedLabel", (const wchar_t *)shfi.szTypeName);
+            if (wcslen(shfi.szTypeName) != 0) {
+                ob_set_a(returnValue, L"localizedTypeDescription", (const wchar_t*)shfi.szTypeName);
+            }
 
 #endif
             
