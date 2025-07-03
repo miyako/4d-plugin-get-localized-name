@@ -1,0 +1,11 @@
+{
+    "name": "Name",
+    "id": 20000,
+    "commands": [
+        {
+            "theme": "Name",
+            "syntax": "Get localized name(&J):J",
+            "threadSafe": true
+        }
+    ]
+}
