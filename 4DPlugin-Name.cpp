@@ -15,6 +15,81 @@
 #if VERSIONWIN
 CLSID pngClsid;
 bool pngClsidValid = false;
+DEFINE_GUID(IID_IImageList, 0x46EB5926, 0x582E, 0x4017, 0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50);
+using namespace Gdiplus;
+
+static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
+
+    UINT num = 0, size = 0;
+    GetImageEncodersSize(&num, &size);
+    if (size == 0) return false;
+
+    ImageCodecInfo* pImageCodecInfo = (ImageCodecInfo*)malloc(size);
+    if (!pImageCodecInfo) return false;
+    GetImageEncoders(num, size, pImageCodecInfo);
+
+    for (UINT i = 0; i < num; i++)
+    {
+        if (wcscmp(pImageCodecInfo[i].MimeType, format) == 0)
+        {
+            *pClsid = pImageCodecInfo[i].Clsid;
+            free(pImageCodecInfo);
+            return true;
+        }
+    }
+
+    free(pImageCodecInfo);
+    return false;
+}
+
+static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
+
+    ICONINFO iconInfo = {};
+    if (!GetIconInfo(hIcon, &iconInfo))
+        return;
+
+    BITMAP bmp = {};
+    GetObject(iconInfo.hbmColor, sizeof(bmp), &bmp);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = bmp.bmWidth;
+    bmi.bmiHeader.biHeight = bmp.bmHeight; // bottom-up
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC hdc = GetDC(NULL);
+    std::vector<uint8_t> pixels(bmp.bmWidth * bmp.bmHeight * 4); // 32-bit BGRA
+
+    GetDIBits(hdc, iconInfo.hbmColor, 0, bmp.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
+    ReleaseDC(NULL, hdc);
+
+    // Prepare BMP file header
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42; // 'BM'
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = bfh.bfOffBits + static_cast<DWORD>(pixels.size());
+
+    // Write everything to memory buffer
+    buf.resize(bfh.bfSize);
+    uint8_t* ptr = buf.data();
+
+    // Copy BITMAPFILEHEADER
+    memcpy(ptr, &bfh, sizeof(bfh));
+    ptr += sizeof(bfh);
+
+    // Copy BITMAPINFOHEADER
+    memcpy(ptr, &bmi.bmiHeader, sizeof(bmi.bmiHeader));
+    ptr += sizeof(bmi.bmiHeader);
+
+    // Copy pixel data
+    memcpy(ptr, pixels.data(), pixels.size());
+
+    // Clean up
+    DeleteObject(iconInfo.hbmColor);
+    DeleteObject(iconInfo.hbmMask);
+}
 #endif
 
 void PluginMain(PA_long32 selector, PA_PluginParameters params) {
@@ -57,85 +132,6 @@ static void _getKey(PA_ObjectRef returnValue, NSURL *url, const char *property, 
             }
         }
     }
-}
-#endif
-
-#if VERSIONWIN
-DEFINE_GUID(IID_IImageList, 0x46EB5926, 0x582E, 0x4017, 0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50);
-
-using namespace Gdiplus;
-
-static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
-    
-    UINT num = 0, size = 0;
-    GetImageEncodersSize(&num, &size);
-    if (size == 0) return false;
-
-    ImageCodecInfo* pImageCodecInfo = (ImageCodecInfo*)malloc(size);
-    if (!pImageCodecInfo) return false;
-    GetImageEncoders(num, size, pImageCodecInfo);
-
-    for (UINT i = 0; i < num; i++)
-    {
-        if (wcscmp(pImageCodecInfo[i].MimeType, format) == 0)
-        {
-            *pClsid = pImageCodecInfo[i].Clsid;
-            free(pImageCodecInfo);
-            return true;
-        }
-    }
-
-    free(pImageCodecInfo);
-    return false;
-}
-
-static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
-    
-    ICONINFO iconInfo = {};
-    if (!GetIconInfo(hIcon, &iconInfo))
-        return;
-
-    BITMAP bmp = {};
-    GetObject(iconInfo.hbmColor, sizeof(bmp), &bmp);
-
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth       = bmp.bmWidth;
-    bmi.bmiHeader.biHeight      = bmp.bmHeight; // bottom-up
-    bmi.bmiHeader.biPlanes      = 1;
-    bmi.bmiHeader.biBitCount    = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    HDC hdc = GetDC(NULL);
-    std::vector<uint8_t> pixels(bmp.bmWidth * bmp.bmHeight * 4); // 32-bit BGRA
-
-    GetDIBits(hdc, iconInfo.hbmColor, 0, bmp.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
-    ReleaseDC(NULL, hdc);
-
-    // Prepare BMP file header
-    BITMAPFILEHEADER bfh = {};
-    bfh.bfType = 0x4D42; // 'BM'
-    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    bfh.bfSize = bfh.bfOffBits + static_cast<DWORD>(pixels.size());
-
-    // Write everything to memory buffer
-    buf.resize(bfh.bfSize);
-    uint8_t* ptr = buf.data();
-
-    // Copy BITMAPFILEHEADER
-    memcpy(ptr, &bfh, sizeof(bfh));
-    ptr += sizeof(bfh);
-
-    // Copy BITMAPINFOHEADER
-    memcpy(ptr, &bmi.bmiHeader, sizeof(bmi.bmiHeader));
-    ptr += sizeof(bmi.bmiHeader);
-
-    // Copy pixel data
-    memcpy(ptr, pixels.data(), pixels.size());
-
-    // Clean up
-    DeleteObject(iconInfo.hbmColor);
-    DeleteObject(iconInfo.hbmMask);
 }
 #endif
 
