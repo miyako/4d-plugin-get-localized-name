@@ -47,25 +47,20 @@ static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     return false;
 }
 
-static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
-
+bool HICONToBGRA(HICON hIcon, std::vector<uint8_t>& outPixels, int& width, int& height)
+{
     if (!hIcon) return false;
-    
-    ICONINFO ii = {};
-    if (!GetIconInfo(hIcon, &ii))
-        return;
 
-    BITMAP bmpColor = {}, bmpMask = {};
+    ICONINFO ii = {};
+    if (!GetIconInfo(hIcon, &ii)) return false;
+
+    BITMAP bmpColor = {};
     GetObject(ii.hbmColor, sizeof(bmpColor), &bmpColor);
-    GetObject(ii.hbmMask, sizeof(bmpMask), &bmpMask);
-    
     width = bmpColor.bmWidth;
     height = bmpColor.bmHeight;
-    
-    buf.resize(width * height * 4); // BGRA
-    
-    HDC hdc = GetDC(NULL);
-    
+    outPixels.resize(width * height * 4, 0);
+
+    // 32-bit DIB section
     BITMAPINFO bi = {};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bi.bmiHeader.biWidth = width;
@@ -73,54 +68,26 @@ static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
     bi.bmiHeader.biPlanes = 1;
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
-    
-    std::vector<uint8_t> colorData(width * height * 4);
-    if (GetDIBits(hdc, ii.hbmColor, 0, height, colorData.data(), &bi, DIB_RGB_COLORS))
-    {
-        int maskWidthBytes = ((width + 31) / 32) * 4; // each row padded to 32 bits
-        std::vector<uint8_t> maskData(maskWidthBytes * height);
-        
-        BITMAPINFO1BPP bmiMask = {};
-        bmiMask.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bmiMask.bmiHeader.biWidth = width;
-        bmiMask.bmiHeader.biHeight = -height; // top-down
-        bmiMask.bmiHeader.biPlanes = 1;
-        bmiMask.bmiHeader.biBitCount = 1;
-        bmiMask.bmiHeader.biCompression = BI_RGB;
-        bmiMask.bmiColors[0] = {0,0,0,0};
-        bmiMask.bmiColors[1] = {255,255,255,0};
-        
-        int maskRowBytes = ((width + 31) / 32) * 4;
-        std::vector<uint8_t> maskData(maskRowBytes * height);
 
-        if(GetDIBits(hdc, ii.hbmMask, 0, height, maskData.data(), (BITMAPINFO*)&bmiMask, DIB_RGB_COLORS))
+    void* pBits = outPixels.data();
+    HDC hdcScreen = GetDC(NULL);
+    HDC hdcMem = CreateCompatibleDC(hdcScreen);
+    HBITMAP hbm = CreateDIBSection(hdcMem, &bi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, hbm);
 
-        {
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    int colorIdx = (y * width + x) * 4;
-                    int maskByte = y * maskWidthBytes + (x / 8);
-                    int maskBit = 7 - (x % 8);
-                    bool isTransparent = (maskData[maskByte] >> maskBit) & 1;
-                    
-                    buf[colorIdx + 0] = colorData[colorIdx + 0]; // B
-                    buf[colorIdx + 1] = colorData[colorIdx + 1]; // G
-                    buf[colorIdx + 2] = colorData[colorIdx + 2]; // R
-                    buf[colorIdx + 3] = isTransparent ? 0 : colorData[colorIdx + 3]; // A
-                }
-            }
-        }
-    }
-    
-    ReleaseDC(NULL, hdc);
-    
+    DrawIconEx(hdcMem, 0, 0, hIcon, width, height, 0, NULL, DI_NORMAL);
+
+    SelectObject(hdcMem, hbmOld);
+    DeleteObject(hbm);
+    DeleteDC(hdcMem);
+    ReleaseDC(NULL, hdcScreen);
+
     DeleteObject(ii.hbmColor);
     DeleteObject(ii.hbmMask);
-    
+
     return true;
 }
+
 #endif
 
 void PluginMain(PA_long32 selector, PA_PluginParameters params) {
@@ -243,19 +210,50 @@ void Get_localized_name(PA_PluginParameters params) {
             if(iconIndex) {
 
                 IImageList* iml = nullptr;
-                if (SUCCEEDED(SHGetImageList(SHIL_EXTRALARGE, IID_IImageList, (void**)&iml)) && iml)
+                if (SUCCEEDED(SHGetImageList(SHIL_JUMBO, IID_IImageList, (void**)&iml)) && iml)
                 {
-                    HICON hIcon = nullptr;
-                    if(SUCCEEDED((IImageListVtbl*)iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT, &hIcon)) && hIcon)
+                    if (SUCCEEDED(iml->lpVtbl->SetOverlayImage(iml, 1, 1)))
                     {
-                        std::vector<uint8_t> buf(0);
-                        HICONToBMPBuffer(hIcon, buf);
-                        
-                        PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
-                        ob_set_p(returnValue, L"linkOverlayIcon", p);
+                        HICON hIcon = nullptr;
+                        if (SUCCEEDED(iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT | ILD_PRESERVEALPHA, &hIcon)) && hIcon)
+                        {
+                                Bitmap* bmp = Bitmap::FromHICON(hIcon);
 
-                        DestroyIcon(hIcon);
+                                if (bmp) {
+                                    if (pngClsidValid) {
+
+                                        IStream* pStream = nullptr;
+                                        if (SUCCEEDED(CreateStreamOnHGlobal(NULL, TRUE, &pStream)))
+                                        {
+                                            if (bmp->Save(pStream, &pngClsid, NULL) == Ok)
+                                            {
+                                                HGLOBAL hMem = NULL;
+                                                if (SUCCEEDED(GetHGlobalFromStream(pStream, &hMem)))
+                                                {
+                                                    SIZE_T size = GlobalSize(hMem);
+                                                    void* pData = GlobalLock(hMem);
+                                                    std::vector<uint8_t> buf(size);
+                                                    memcpy(buf.data(), pData, size);
+
+                                                    PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                                                    ob_set_p(returnValue, L"linkOverlayIcon", p);
+
+                                                    GlobalUnlock(hMem);
+                                                }
+                                            }
+                                            pStream->Release();
+                                        }
+
+                                    }
+
+                                    delete bmp;
+                                }
+                            
+                            DestroyIcon(hIcon);
+                        }
                     }
+
+                   
                     iml->lpVtbl->Release(iml);
                 }
             }
