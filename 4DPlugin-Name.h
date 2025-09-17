@@ -17,9 +17,35 @@
 
 #if VERSIONWIN
 #include <windows.h>
+#include <commctrl.h>
+#include <shlobj.h>
 #include <shlwapi.h>
-#include <shellapi.h>
 #include <shobjidl.h>
+#include <commctrl.h>
+#include <shellapi.h>
+#include <initguid.h> // for DEFINE_GUID
+#include <gdiplus.h>
+#pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "shell32.lib")
+struct IImageListVtbl;
+struct IImageList {
+    IImageListVtbl* lpVtbl;
+};
+struct IImageListVtbl {
+    HRESULT(STDMETHODCALLTYPE* QueryInterface)(IImageList*, REFIID, void**);
+    ULONG(STDMETHODCALLTYPE* AddRef)(IImageList*);
+    ULONG(STDMETHODCALLTYPE* Release)(IImageList*);
+    HRESULT(STDMETHODCALLTYPE* Add)(IImageList*, HBITMAP, HBITMAP, int*);
+    HRESULT(STDMETHODCALLTYPE* ReplaceIcon)(IImageList*, int, HICON, int*);
+    HRESULT(STDMETHODCALLTYPE* SetOverlayImage)(IImageList*, int, int);
+    HRESULT(STDMETHODCALLTYPE* Replace)(IImageList*, int, HBITMAP, HBITMAP);
+    HRESULT(STDMETHODCALLTYPE* AddMasked)(IImageList*, HBITMAP, COLORREF, int*);
+    HRESULT(STDMETHODCALLTYPE* Draw)(IImageList*, IMAGELISTDRAWPARAMS*);
+    HRESULT(STDMETHODCALLTYPE* Remove)(IImageList*, int);
+    HRESULT(STDMETHODCALLTYPE* GetIcon)(IImageList*, int, UINT, HICON*);
+    // Other methods omitted for brevity
+};
 #endif
 
 #pragma mark -

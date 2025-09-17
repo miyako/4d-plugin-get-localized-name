@@ -51,6 +51,32 @@ static void _getKey(PA_ObjectRef returnValue, NSURL *url, const char *property, 
 #endif
 
 #if VERSIONWIN
+DEFINE_GUID(IID_IImageList, 0x46EB5926, 0x582E, 0x4017, 0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50);
+using namespace Gdiplus;
+static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid)
+{
+    UINT num = 0, size = 0;
+    GetImageEncodersSize(&num, &size);
+    if (size == 0) return false;
+
+    ImageCodecInfo* pImageCodecInfo = (ImageCodecInfo*)malloc(size);
+    if (!pImageCodecInfo) return false;
+    GetImageEncoders(num, size, pImageCodecInfo);
+
+    for (UINT i = 0; i < num; i++)
+    {
+        if (wcscmp(pImageCodecInfo[i].MimeType, format) == 0)
+        {
+            *pClsid = pImageCodecInfo[i].Clsid;
+            free(pImageCodecInfo);
+            return true;
+        }
+    }
+
+    free(pImageCodecInfo);
+    return false;
+}
+
 static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
     
     ICONINFO iconInfo = {};
@@ -161,23 +187,72 @@ void Get_localized_name(PA_PluginParameters params) {
                 ob_set_a(returnValue, L"localizedTypeDescription", (const wchar_t*)shfi.szTypeName);
             }
             
-            HICON hIcon = NULL;
+            int iconIndex = 0;
             
             if(SHGetFileInfo(
                           lpFile,
-                          FILE_ATTRIBUTE_NORMAL,
+                FILE_ATTRIBUTE_NORMAL,
                           &shfi,
                           sizeof(SHFILEINFO),
-                          SHGFI_ICON | SHGFI_LARGEICON | SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY
+                SHGFI_SYSICONINDEX | SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY
                              )) {
-                                 hIcon = fileinfo.hIcon;
+                iconIndex = shfi.iIcon;
                              }
             
-            if(hIcon) {
+            if(iconIndex) {
+
+                IImageList* iml = nullptr;
+                if (SUCCEEDED(SHGetImageList(SHIL_EXTRALARGE, IID_IImageList, (void**)&iml)) && iml)
+                {
+                    HICON hIcon = nullptr;
+
+                    if(SUCCEEDED((IImageListVtbl*)iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT, &hIcon)) && hIcon)
+                    {
+                        using namespace Gdiplus;
+                        Bitmap* bmp = Bitmap::FromHICON(hIcon);
+                        if (bmp)
+                        {
+                            
+                            IStream* pStream = nullptr;
+                            if (SUCCEEDED(CreateStreamOnHGlobal(NULL, TRUE, &pStream)))
+                            {
+                                CLSID pngClsid;
+                                if (GetEncoderClsid(L"image/png", &pngClsid)) {
+                                    if (bmp->Save(pStream, &pngClsid, NULL) == Ok)
+                                    {
+                                        HGLOBAL hMem = NULL;
+                                        if (SUCCEEDED(GetHGlobalFromStream(pStream, &hMem)))
+                                        {
+                                            SIZE_T size = GlobalSize(hMem);
+                                            void* pData = GlobalLock(hMem);
+                                            std::vector<uint8_t> buf(size);
+                                            memcpy(buf.data(), pData, size);
+                                            GlobalUnlock(hMem);
+
+                                            PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                                            ob_set_p(returnValue, L"linkOverlayIcon", p);
+                                        }
+                                    }
+                                }
+                            }
+
+                            delete bmp;
+                        }
+
+                        DestroyIcon(hIcon);
+
+                        iml->lpVtbl->Release(iml);
+                        
+                    }
+
+                }
+
+                /*
+               
                 std::vector<uint8_t>buf(0);
                 HICONToBMPBuffer(hIcon, buf);
-                PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
-                ob_set_p(returnValue, L"linkOverlayIcon", p);
+                
+                 */
             }
 
 #endif
