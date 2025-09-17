@@ -47,7 +47,7 @@ static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     return false;
 }
 
-bool HICONToBGRA(HICON hIcon, std::vector<uint8_t>& outPixels, int& width, int& height)
+bool HICONToBGRAWithShortcutArrow(HICON hIcon, std::vector<uint8_t>& outPixels, int& width, int& height)
 {
     if (!hIcon) return false;
 
@@ -75,7 +75,21 @@ bool HICONToBGRA(HICON hIcon, std::vector<uint8_t>& outPixels, int& width, int& 
     HBITMAP hbm = CreateDIBSection(hdcMem, &bi, DIB_RGB_COLORS, &pBits, NULL, 0);
     HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, hbm);
 
+    // Draw the base icon
     DrawIconEx(hdcMem, 0, 0, hIcon, width, height, 0, NULL, DI_NORMAL);
+
+    // Load the system shortcut arrow (16x16)
+    HICON hArrow = (HICON)LoadImage(NULL, L"C:\\Windows\\System32\\shell32.dll,-50",
+                                    IMAGE_ICON, 0, 0, LR_SHARED);
+
+    if (hArrow)
+    {
+        // Scale arrow to ~25% of icon width
+        int arrowSize = width / 4;
+        int arrowX = 0;
+        int arrowY = height - arrowSize;
+        DrawIconEx(hdcMem, arrowX, arrowY, hArrow, arrowSize, arrowSize, 0, NULL, DI_NORMAL);
+    }
 
     SelectObject(hdcMem, hbmOld);
     DeleteObject(hbm);
@@ -217,6 +231,15 @@ void Get_localized_name(PA_PluginParameters params) {
                         HICON hIcon = nullptr;
                         if (SUCCEEDED(iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT | ILD_PRESERVEALPHA, &hIcon)) && hIcon)
                         {
+                            std::vector<uint8_t> buf;
+                               int width = 0, height = 0;
+                               if (HICONToBGRAWithShortcutArrow(hIcon, buf, width, height))
+                               {
+                                   PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                                   ob_set_p(returnValue, L"linkOverlayIcon", p);
+                               }
+                            
+                            /*
                                 Bitmap* bmp = Bitmap::FromHICON(hIcon);
 
                                 if (bmp) {
@@ -248,6 +271,7 @@ void Get_localized_name(PA_PluginParameters params) {
 
                                     delete bmp;
                                 }
+                            */
                             
                             DestroyIcon(hIcon);
                         }
