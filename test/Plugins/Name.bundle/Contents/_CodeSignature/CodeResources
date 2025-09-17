@@ -13,10 +13,6 @@
 			<key>optional</key>
 			<true/>
 		</dict>
-		<key>Resources/constants.xlf</key>
-		<data>
-		H+Q2vl3Orv27Vk3mT66ec5knPGo=
-		</data>
 		<key>Resources/manifest.json</key>
 		<data>
 		qqTggywqC6kk43g+Nb3nKHcp38E=
@@ -40,13 +36,6 @@
 			<key>optional</key>
 			<true/>
 		</dict>
-		<key>Resources/constants.xlf</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			jQL7qG5AeDqChptCKJYekMqu7RawqEJLLRiSN2ARhqc=
-			</data>
-		</dict>
 		<key>Resources/manifest.json</key>
 		<dict>
 			<key>hash2</key>
@@ -54,18 +43,11 @@
 			6ujLO2AFRkFNHJ6sY0rcioT+h5++HxWgXRaYTTooBJA=
 			</data>
 		</dict>
-		<key>Windows/Name.4DX</key>
-		<dict>
-			<key>hash2</key>
-			<data>
-			ZCCEqtPmUM+2iJDxTvuZrd5mchV7dH5Z4RZvNF7YQT0=
-			</data>
-		</dict>
 		<key>Windows64/Name.4DX</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			zlHTuDvCOy9zIzaw8JTfxPtlz7qcdbPVnpeeX0edYE8=
+			SFJwd95ZRPkq5M4SQU4YNpjybvLCgVYQGX5ewqgVxds=
 			</data>
 		</dict>
 	</dict>

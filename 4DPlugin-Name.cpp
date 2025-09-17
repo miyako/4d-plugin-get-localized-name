@@ -16,6 +16,11 @@
 CLSID pngClsid;
 bool pngClsidValid = false;
 DEFINE_GUID(IID_IImageList, 0x46EB5926, 0x582E, 0x4017, 0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50);
+struct BITMAPINFO1BPP
+{
+    BITMAPINFOHEADER bmiHeader;
+    RGBQUAD bmiColors[2]; // required for 1bpp
+};
 using namespace Gdiplus;
 
 static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
@@ -46,8 +51,8 @@ static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
 
     if (!hIcon) return false;
     
-    ICONINFO iconInfo = {};
-    if (!GetIconInfo(hIcon, &iconInfo))
+    ICONINFO ii = {};
+    if (!GetIconInfo(hIcon, &ii))
         return;
 
     BITMAP bmpColor = {}, bmpMask = {};
@@ -70,49 +75,46 @@ static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
     bi.bmiHeader.biCompression = BI_RGB;
     
     std::vector<uint8_t> colorData(width * height * 4);
-    if (!GetDIBits(hdc, ii.hbmColor, 0, height, colorData.data(), &bi, DIB_RGB_COLORS))
+    if (GetDIBits(hdc, ii.hbmColor, 0, height, colorData.data(), &bi, DIB_RGB_COLORS))
     {
-        ReleaseDC(NULL, hdc);
-        DeleteObject(ii.hbmColor);
-        DeleteObject(ii.hbmMask);
-        return false;
-    }
-    
-    int maskWidthBytes = ((width + 31) / 32) * 4; // each row padded to 32 bits
-    std::vector<uint8_t> maskData(maskWidthBytes * height);
-    BITMAPINFO bmiMask = {};
-    bmiMask.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmiMask.bmiHeader.biWidth = width;
-    bmiMask.bmiHeader.biHeight = -height; // top-down
-    bmiMask.bmiHeader.biPlanes = 1;
-    bmiMask.bmiHeader.biBitCount = 1;
-    bmiMask.bmiHeader.biCompression = BI_RGB;
-    
-    if (!GetDIBits(hdc, ii.hbmMask, 0, height, maskData.data(), &bmiMask, DIB_RGB_COLORS))
-    {
-        ReleaseDC(NULL, hdc);
-        DeleteObject(ii.hbmColor);
-        DeleteObject(ii.hbmMask);
-        return false;
+        int maskWidthBytes = ((width + 31) / 32) * 4; // each row padded to 32 bits
+        std::vector<uint8_t> maskData(maskWidthBytes * height);
+        
+        BITMAPINFO1BPP bmiMask = {};
+        bmiMask.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmiMask.bmiHeader.biWidth = width;
+        bmiMask.bmiHeader.biHeight = -height; // top-down
+        bmiMask.bmiHeader.biPlanes = 1;
+        bmiMask.bmiHeader.biBitCount = 1;
+        bmiMask.bmiHeader.biCompression = BI_RGB;
+        bmiMask.bmiColors[0] = {0,0,0,0};
+        bmiMask.bmiColors[1] = {255,255,255,0};
+        
+        int maskRowBytes = ((width + 31) / 32) * 4;
+        std::vector<uint8_t> maskData(maskRowBytes * height);
+
+        if(GetDIBits(hdc, ii.hbmMask, 0, height, maskData.data(), (BITMAPINFO*)&bmiMask, DIB_RGB_COLORS))
+
+        {
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int colorIdx = (y * width + x) * 4;
+                    int maskByte = y * maskWidthBytes + (x / 8);
+                    int maskBit = 7 - (x % 8);
+                    bool isTransparent = (maskData[maskByte] >> maskBit) & 1;
+                    
+                    buf[colorIdx + 0] = colorData[colorIdx + 0]; // B
+                    buf[colorIdx + 1] = colorData[colorIdx + 1]; // G
+                    buf[colorIdx + 2] = colorData[colorIdx + 2]; // R
+                    buf[colorIdx + 3] = isTransparent ? 0 : colorData[colorIdx + 3]; // A
+                }
+            }
+        }
     }
     
     ReleaseDC(NULL, hdc);
-    
-    for (int y = 0; y < height; y++)
-    {
-        for (int x = 0; x < width; x++)
-        {
-            int colorIdx = (y * width + x) * 4;
-            int maskByte = y * maskWidthBytes + (x / 8);
-            int maskBit = 7 - (x % 8);
-            bool isTransparent = (maskData[maskByte] >> maskBit) & 1;
-            
-            buf[colorIdx + 0] = colorData[colorIdx + 0]; // B
-            buf[colorIdx + 1] = colorData[colorIdx + 1]; // G
-            buf[colorIdx + 2] = colorData[colorIdx + 2]; // R
-            buf[colorIdx + 3] = isTransparent ? 0 : colorData[colorIdx + 3]; // A
-        }
-    }
     
     DeleteObject(ii.hbmColor);
     DeleteObject(ii.hbmMask);
@@ -131,7 +133,9 @@ void PluginMain(PA_long32 selector, PA_PluginParameters params) {
             
             case kInitPlugin:
             case kServerInitPlugin:
+#if VERSIONWIN
                 pngClsidValid = GetEncoderClsid(L"image/png", &pngClsid);
+#endif
                 break;
                 
 			case 1 :
