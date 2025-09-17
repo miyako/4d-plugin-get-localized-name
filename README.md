@@ -17,7 +17,7 @@ $name:=Get localized name($file)
 ```json
 {
  "localizedName":"デスクトップ",
- "localizedTypeDescription ":"フォルダ"
+ "localizedTypeDescription":"フォルダ"
 }
 
 {
@@ -32,7 +32,7 @@ $name:=Get localized name($file)
 ```json
 {
  "localizedName":"デスクトップ",
- "localizedTypeDescription ":"ファイル フォルダー"
+ "localizedTypeDescription":"ファイル フォルダー"
 }
 
 {
