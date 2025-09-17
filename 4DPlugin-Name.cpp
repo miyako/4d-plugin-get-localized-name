@@ -50,6 +50,57 @@ static void _getKey(PA_ObjectRef returnValue, NSURL *url, const char *property, 
 }
 #endif
 
+#if VERSIONWIN
+static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
+    
+    ICONINFO iconInfo = {};
+    if (!GetIconInfo(hIcon, &iconInfo))
+        return;
+
+    BITMAP bmp = {};
+    GetObject(iconInfo.hbmColor, sizeof(bmp), &bmp);
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth       = bmp.bmWidth;
+    bmi.bmiHeader.biHeight      = bmp.bmHeight; // bottom-up
+    bmi.bmiHeader.biPlanes      = 1;
+    bmi.bmiHeader.biBitCount    = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    HDC hdc = GetDC(NULL);
+    std::vector<uint8_t> pixels(bmp.bmWidth * bmp.bmHeight * 4); // 32-bit BGRA
+
+    GetDIBits(hdc, iconInfo.hbmColor, 0, bmp.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
+    ReleaseDC(NULL, hdc);
+
+    // Prepare BMP file header
+    BITMAPFILEHEADER bfh = {};
+    bfh.bfType = 0x4D42; // 'BM'
+    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    bfh.bfSize = bfh.bfOffBits + static_cast<DWORD>(pixels.size());
+
+    // Write everything to memory buffer
+    buf.resize(bfh.bfSize);
+    uint8_t* ptr = buf.data();
+
+    // Copy BITMAPFILEHEADER
+    memcpy(ptr, &bfh, sizeof(bfh));
+    ptr += sizeof(bfh);
+
+    // Copy BITMAPINFOHEADER
+    memcpy(ptr, &bmi.bmiHeader, sizeof(bmi.bmiHeader));
+    ptr += sizeof(bmi.bmiHeader);
+
+    // Copy pixel data
+    memcpy(ptr, pixels.data(), pixels.size());
+
+    // Clean up
+    DeleteObject(iconInfo.hbmColor);
+    DeleteObject(iconInfo.hbmMask);
+}
+#endif
+
 void Get_localized_name(PA_PluginParameters params) {
 
     PA_ObjectRef returnValue = PA_CreateObject();
@@ -94,8 +145,6 @@ void Get_localized_name(PA_PluginParameters params) {
                 ob_set_a(returnValue, L"localizedDescription", (const wchar_t *)lpResult);
             }
             
-            
-            
             SHFILEINFO shfi;
             SHGetFileInfo(
                           lpFile,
@@ -110,6 +159,25 @@ void Get_localized_name(PA_PluginParameters params) {
             }
             if (wcslen(shfi.szTypeName) != 0) {
                 ob_set_a(returnValue, L"localizedTypeDescription", (const wchar_t*)shfi.szTypeName);
+            }
+            
+            HICON hIcon = NULL;
+            
+            if(SHGetFileInfo(
+                          lpFile,
+                          FILE_ATTRIBUTE_NORMAL,
+                          &shfi,
+                          sizeof(SHFILEINFO),
+                          SHGFI_ICON | SHGFI_LARGEICON | SHGFI_ADDOVERLAYS | SHGFI_LINKOVERLAY
+                             )) {
+                                 hIcon = fileinfo.hIcon;
+                             }
+            
+            if(hIcon) {
+                std::vector<uint8_t>buf(0);
+                HICONToBMPBuffer(hIcon, buf);
+                PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                ob_set_p(returnValue, L"linkOverlayIcon", p);
             }
 
 #endif
