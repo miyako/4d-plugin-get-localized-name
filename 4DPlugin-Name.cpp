@@ -272,47 +272,34 @@ void Get_localized_name(PA_PluginParameters params) {
                         HICON hIcon = nullptr;
                         if (SUCCEEDED(iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT | ILD_PRESERVEALPHA, &hIcon)) && hIcon)
                         {
-                            std::vector<uint8_t> buf;
-                               int width = 0, height = 0;
-                               if (HICONToBGRAWithShortcutArrow(hIcon, buf, width, height))
-                               {
-                                   PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
-                                   ob_set_p(returnValue, L"linkOverlayIcon", p);
-                               }
-                            
-                            /*
-                                Bitmap* bmp = Bitmap::FromHICON(hIcon);
-
-                                if (bmp) {
-                                    if (pngClsidValid) {
-
-                                        IStream* pStream = nullptr;
-                                        if (SUCCEEDED(CreateStreamOnHGlobal(NULL, TRUE, &pStream)))
+                            Bitmap* bmp = Bitmap::FromHICON(hIcon);
+                            if (bmp) {
+                                if (pngClsidValid) {
+                                    
+                                    IStream* pStream = nullptr;
+                                    if (SUCCEEDED(CreateStreamOnHGlobal(NULL, TRUE, &pStream)))
+                                    {
+                                        if (bmp->Save(pStream, &pngClsid, NULL) == Ok)
                                         {
-                                            if (bmp->Save(pStream, &pngClsid, NULL) == Ok)
+                                            HGLOBAL hMem = NULL;
+                                            if (SUCCEEDED(GetHGlobalFromStream(pStream, &hMem)))
                                             {
-                                                HGLOBAL hMem = NULL;
-                                                if (SUCCEEDED(GetHGlobalFromStream(pStream, &hMem)))
-                                                {
-                                                    SIZE_T size = GlobalSize(hMem);
-                                                    void* pData = GlobalLock(hMem);
-                                                    std::vector<uint8_t> buf(size);
-                                                    memcpy(buf.data(), pData, size);
-
-                                                    PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
-                                                    ob_set_p(returnValue, L"linkOverlayIcon", p);
-
-                                                    GlobalUnlock(hMem);
-                                                }
+                                                SIZE_T size = GlobalSize(hMem);
+                                                void* pData = GlobalLock(hMem);
+                                                std::vector<uint8_t> buf(size);
+                                                memcpy(buf.data(), pData, size);
+                                                
+                                                PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                                                ob_set_p(returnValue, L"linkOverlayIcon", p);
+                                                
+                                                GlobalUnlock(hMem);
                                             }
-                                            pStream->Release();
                                         }
-
+                                        pStream->Release();
                                     }
-
-                                    delete bmp;
                                 }
-                            */
+                                delete bmp;
+                            }
                             
                             DestroyIcon(hIcon);
                         }
