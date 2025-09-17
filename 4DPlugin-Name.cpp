@@ -44,51 +44,80 @@ static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
 
 static void HICONToBMPBuffer(HICON hIcon, std::vector<uint8_t>& buf) {
 
+    if (!hIcon) return false;
+    
     ICONINFO iconInfo = {};
     if (!GetIconInfo(hIcon, &iconInfo))
         return;
 
-    BITMAP bmp = {};
-    GetObject(iconInfo.hbmColor, sizeof(bmp), &bmp);
-
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth = bmp.bmWidth;
-    bmi.bmiHeader.biHeight = bmp.bmHeight; // bottom-up
-    bmi.bmiHeader.biPlanes = 1;
-    bmi.bmiHeader.biBitCount = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
+    BITMAP bmpColor = {}, bmpMask = {};
+    GetObject(ii.hbmColor, sizeof(bmpColor), &bmpColor);
+    GetObject(ii.hbmMask, sizeof(bmpMask), &bmpMask);
+    
+    width = bmpColor.bmWidth;
+    height = bmpColor.bmHeight;
+    
+    buf.resize(width * height * 4); // BGRA
+    
     HDC hdc = GetDC(NULL);
-    std::vector<uint8_t> pixels(bmp.bmWidth * bmp.bmHeight * 4); // 32-bit BGRA
-
-    GetDIBits(hdc, iconInfo.hbmColor, 0, bmp.bmHeight, pixels.data(), &bmi, DIB_RGB_COLORS);
+    
+    BITMAPINFO bi = {};
+    bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = width;
+    bi.bmiHeader.biHeight = -height; // top-down
+    bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32;
+    bi.bmiHeader.biCompression = BI_RGB;
+    
+    std::vector<uint8_t> colorData(width * height * 4);
+    if (!GetDIBits(hdc, ii.hbmColor, 0, height, colorData.data(), &bi, DIB_RGB_COLORS))
+    {
+        ReleaseDC(NULL, hdc);
+        DeleteObject(ii.hbmColor);
+        DeleteObject(ii.hbmMask);
+        return false;
+    }
+    
+    int maskWidthBytes = ((width + 31) / 32) * 4; // each row padded to 32 bits
+    std::vector<uint8_t> maskData(maskWidthBytes * height);
+    BITMAPINFO bmiMask = {};
+    bmiMask.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmiMask.bmiHeader.biWidth = width;
+    bmiMask.bmiHeader.biHeight = -height; // top-down
+    bmiMask.bmiHeader.biPlanes = 1;
+    bmiMask.bmiHeader.biBitCount = 1;
+    bmiMask.bmiHeader.biCompression = BI_RGB;
+    
+    if (!GetDIBits(hdc, ii.hbmMask, 0, height, maskData.data(), &bmiMask, DIB_RGB_COLORS))
+    {
+        ReleaseDC(NULL, hdc);
+        DeleteObject(ii.hbmColor);
+        DeleteObject(ii.hbmMask);
+        return false;
+    }
+    
     ReleaseDC(NULL, hdc);
-
-    // Prepare BMP file header
-    BITMAPFILEHEADER bfh = {};
-    bfh.bfType = 0x4D42; // 'BM'
-    bfh.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    bfh.bfSize = bfh.bfOffBits + static_cast<DWORD>(pixels.size());
-
-    // Write everything to memory buffer
-    buf.resize(bfh.bfSize);
-    uint8_t* ptr = buf.data();
-
-    // Copy BITMAPFILEHEADER
-    memcpy(ptr, &bfh, sizeof(bfh));
-    ptr += sizeof(bfh);
-
-    // Copy BITMAPINFOHEADER
-    memcpy(ptr, &bmi.bmiHeader, sizeof(bmi.bmiHeader));
-    ptr += sizeof(bmi.bmiHeader);
-
-    // Copy pixel data
-    memcpy(ptr, pixels.data(), pixels.size());
-
-    // Clean up
-    DeleteObject(iconInfo.hbmColor);
-    DeleteObject(iconInfo.hbmMask);
+    
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            int colorIdx = (y * width + x) * 4;
+            int maskByte = y * maskWidthBytes + (x / 8);
+            int maskBit = 7 - (x % 8);
+            bool isTransparent = (maskData[maskByte] >> maskBit) & 1;
+            
+            buf[colorIdx + 0] = colorData[colorIdx + 0]; // B
+            buf[colorIdx + 1] = colorData[colorIdx + 1]; // G
+            buf[colorIdx + 2] = colorData[colorIdx + 2]; // R
+            buf[colorIdx + 3] = isTransparent ? 0 : colorData[colorIdx + 3]; // A
+        }
+    }
+    
+    DeleteObject(ii.hbmColor);
+    DeleteObject(ii.hbmMask);
+    
+    return true;
 }
 #endif
 
