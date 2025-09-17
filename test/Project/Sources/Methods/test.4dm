@@ -4,7 +4,7 @@ $name:=Get localized name($file)
 
 $icon:=$name.linkOverlayIcon
 PICTURE PROPERTIES:C457($icon; $width; $height)
-//CONVERT PICTURE($icon; ".png")
+CONVERT PICTURE:C1002($icon; ".png")
 
 WRITE PICTURE FILE:C680(System folder:C487(Desktop:K41:16)+"icon.png"; $icon)
 

@@ -47,6 +47,43 @@ static bool GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     return false;
 }
 
+static HICON LoadSystemShortcutArrow()
+{
+    // Get real system directory (handles WOW64/ARM)
+    wchar_t sysDir[MAX_PATH] = {};
+    UINT len = GetSystemDirectoryW(sysDir, MAX_PATH);
+    if (len == 0 || len >= MAX_PATH) return nullptr;
+
+    // Build full path to shell32.dll
+    std::wstring shell32Path = sysDir;
+    if (shell32Path.back() != L'\\') shell32Path += L'\\';
+    shell32Path += L"shell32.dll";
+
+    // Load the arrow icon (resource ID -50)
+    HICON hArrow = (HICON)LoadImage(
+        NULL,
+        shell32Path.c_str(),   // path to DLL
+        IMAGE_ICON,
+        0, 0,
+        LR_SHARED | LR_DEFAULTSIZE
+    );
+
+    // Use MAKEINTRESOURCE to specify resource ID (-50)
+    if (hArrow == nullptr)
+    {
+        // fallback: use negative resource ID via MAKEINTRESOURCE
+        hArrow = (HICON)LoadImage(
+            NULL,
+            MAKEINTRESOURCEW(-50),
+            IMAGE_ICON,
+            0, 0,
+            LR_SHARED | LR_DEFAULTSIZE
+        );
+    }
+
+    return hArrow;
+}
+
 bool HICONToBGRAWithShortcutArrow(HICON hIcon, std::vector<uint8_t>& outPixels, int& width, int& height)
 {
     if (!hIcon) return false;
@@ -60,7 +97,6 @@ bool HICONToBGRAWithShortcutArrow(HICON hIcon, std::vector<uint8_t>& outPixels, 
     height = bmpColor.bmHeight;
     outPixels.resize(width * height * 4, 0);
 
-    // 32-bit DIB section
     BITMAPINFO bi = {};
     bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bi.bmiHeader.biWidth = width;
@@ -69,28 +105,34 @@ bool HICONToBGRAWithShortcutArrow(HICON hIcon, std::vector<uint8_t>& outPixels, 
     bi.bmiHeader.biBitCount = 32;
     bi.bmiHeader.biCompression = BI_RGB;
 
-    void* pBits = outPixels.data();
+    void* pBits = nullptr;
     HDC hdcScreen = GetDC(NULL);
     HDC hdcMem = CreateCompatibleDC(hdcScreen);
     HBITMAP hbm = CreateDIBSection(hdcMem, &bi, DIB_RGB_COLORS, &pBits, NULL, 0);
+    if (!hbm) { DeleteDC(hdcMem); ReleaseDC(NULL, hdcScreen); return false; }
+
     HBITMAP hbmOld = (HBITMAP)SelectObject(hdcMem, hbm);
 
     // Draw the base icon
     DrawIconEx(hdcMem, 0, 0, hIcon, width, height, 0, NULL, DI_NORMAL);
 
-    // Load the system shortcut arrow (16x16)
-    HICON hArrow = (HICON)LoadImage(NULL, L"C:\\Windows\\System32\\shell32.dll,-50",
-                                    IMAGE_ICON, 0, 0, LR_SHARED);
-
+    // Draw the arrow
+    //HICON hArrow = (HICON)LoadImage(NULL, L"C:\\Windows\\System32\\shell32.dll,-50",
+   //     IMAGE_ICON, 0, 0, LR_SHARED);
+    HICON hArrow = LoadSystemShortcutArrow();
     if (hArrow)
     {
-        // Scale arrow to ~25% of icon width
         int arrowSize = width / 4;
         int arrowX = 0;
         int arrowY = height - arrowSize;
         DrawIconEx(hdcMem, arrowX, arrowY, hArrow, arrowSize, arrowSize, 0, NULL, DI_NORMAL);
     }
 
+    // Copy pixels from DIB section to outPixels
+    if (pBits)
+        memcpy(outPixels.data(), pBits, width * height * 4);
+
+    // Cleanup
     SelectObject(hdcMem, hbmOld);
     DeleteObject(hbm);
     DeleteDC(hdcMem);
@@ -101,7 +143,6 @@ bool HICONToBGRAWithShortcutArrow(HICON hIcon, std::vector<uint8_t>& outPixels, 
 
     return true;
 }
-
 #endif
 
 void PluginMain(PA_long32 selector, PA_PluginParameters params) {
