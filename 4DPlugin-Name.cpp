@@ -15,7 +15,8 @@
 #if VERSIONWIN
 CLSID pngClsid;
 bool pngClsidValid = false;
-DEFINE_GUID(IID_IImageList, 0x46EB5926, 0x582E, 0x4017, 0x9F, 0xDF, 0xE8, 0x99, 0x8D, 0xAA, 0x09, 0x50);
+static ULONG_PTR gdiplusToken = 0; // set by GdiplusStartup in kInitPlugin/kServerInitPlugin, torn down in kClosePlugin/kServerClosePlugin
+static std::mutex g_sharedImageListMutex; // SHGetImageList returns a process-shared Shell image list; SetOverlayImage mutates shared state, so serialize access -- manifest.json declares this command threadSafe
 struct BITMAPINFO1BPP
 {
     BITMAPINFOHEADER bmiHeader;
@@ -156,12 +157,35 @@ void PluginMain(PA_long32 selector, PA_PluginParameters params) {
             case kInitPlugin:
             case kServerInitPlugin:
 #if VERSIONWIN
+                {
+                    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+                    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+                }
                 pngClsidValid = GetEncoderClsid(L"image/png", &pngClsid);
 #endif
                 break;
-                
+
+            case kDeinitPlugin:
+            case kServerDeinitPlugin:
+#if VERSIONWIN
+                if (gdiplusToken) {
+                    Gdiplus::GdiplusShutdown(gdiplusToken);
+                    gdiplusToken = 0;
+                }
+#endif
+                break;
+
 			case 1 :
-				Get_localized_name(params);
+                // Get_localized_name has its own PA_ReturnObject call at the end of every path;
+                // wrap it locally so an exception thrown mid-function still returns a value to 4D
+                // instead of being swallowed by the outer catch(...) below with no return sent --
+                // that would leave the host waiting forever (freeze), since this command's manifest
+                // syntax declares a return value ("Get localized name(&J):J").
+                try {
+                    Get_localized_name(params);
+                } catch (...) {
+                    PA_ReturnObject(params, PA_CreateObject());
+                }
 				break;
 
         }
@@ -234,20 +258,20 @@ void Get_localized_name(PA_PluginParameters params) {
                 ob_set_a(returnValue, L"localizedDescription", (const wchar_t *)lpResult);
             }
             
-            SHFILEINFO shfi;
-            SHGetFileInfo(
+            SHFILEINFO shfi = {};
+            if (SHGetFileInfo(
                           lpFile,
                           FILE_ATTRIBUTE_NORMAL,
                           &shfi,
                           sizeof(SHFILEINFO),
                           SHGFI_DISPLAYNAME | SHGFI_TYPENAME | (itemClass == object_class_file ? SHGFI_USEFILEATTRIBUTES : 0)
-                          );
-            
-            if (wcslen(shfi.szDisplayName) != 0) {
-                ob_set_a(returnValue, L"localizedName", (const wchar_t*)shfi.szDisplayName);
-            }
-            if (wcslen(shfi.szTypeName) != 0) {
-                ob_set_a(returnValue, L"localizedTypeDescription", (const wchar_t*)shfi.szTypeName);
+                          )) {
+                if (wcslen(shfi.szDisplayName) != 0) {
+                    ob_set_a(returnValue, L"localizedName", (const wchar_t*)shfi.szDisplayName);
+                }
+                if (wcslen(shfi.szTypeName) != 0) {
+                    ob_set_a(returnValue, L"localizedTypeDescription", (const wchar_t*)shfi.szTypeName);
+                }
             }
             
             int iconIndex = 0;
@@ -264,13 +288,19 @@ void Get_localized_name(PA_PluginParameters params) {
             
             if(iconIndex) {
 
+                // SHGetImageList returns the process-wide shared Shell image list; SetOverlayImage
+                // below mutates a shared overlay slot on it, and manifest.json declares this command
+                // threadSafe -- serialize the whole borrow-mutate-use sequence so concurrent calls
+                // can't race on that shared slot.
+                std::lock_guard<std::mutex> imageListLock(g_sharedImageListMutex);
+
                 IImageList* iml = nullptr;
                 if (SUCCEEDED(SHGetImageList(SHIL_JUMBO, IID_IImageList, (void**)&iml)) && iml)
                 {
-                    if (SUCCEEDED(iml->lpVtbl->SetOverlayImage(iml, 1, 1)))
+                    if (SUCCEEDED(iml->SetOverlayImage(1, 1)))
                     {
                         HICON hIcon = nullptr;
-                        if (SUCCEEDED(iml->lpVtbl->GetIcon(iml, iconIndex, ILD_TRANSPARENT | ILD_PRESERVEALPHA, &hIcon)) && hIcon)
+                        if (SUCCEEDED(iml->GetIcon(iconIndex, ILD_TRANSPARENT | ILD_PRESERVEALPHA, &hIcon)) && hIcon)
                         {
                             Bitmap* bmp = Bitmap::FromHICON(hIcon);
                             if (bmp) {
@@ -286,13 +316,15 @@ void Get_localized_name(PA_PluginParameters params) {
                                             {
                                                 SIZE_T size = GlobalSize(hMem);
                                                 void* pData = GlobalLock(hMem);
-                                                std::vector<uint8_t> buf(size);
-                                                memcpy(buf.data(), pData, size);
-                                                
-                                                PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
-                                                ob_set_p(returnValue, L"linkOverlayIcon", p);
-                                                
-                                                GlobalUnlock(hMem);
+                                                if (pData) {
+                                                    std::vector<uint8_t> buf(size);
+                                                    memcpy(buf.data(), pData, size);
+                                                    
+                                                    PA_Picture p = PA_CreatePicture(buf.data(), buf.size());
+                                                    ob_set_p(returnValue, L"linkOverlayIcon", p);
+                                                    
+                                                    GlobalUnlock(hMem);
+                                                }
                                             }
                                         }
                                         pStream->Release();
@@ -306,7 +338,7 @@ void Get_localized_name(PA_PluginParameters params) {
                     }
 
                    
-                    iml->lpVtbl->Release(iml);
+                    iml->Release();
                 }
             }
 #endif
@@ -363,13 +395,19 @@ static object_class_t _ob_class(PA_ObjectRef f){
             c.setUTF16String(&name);
             CUTF8String _name;
             c.copyUTF8String(&_name);
+
+            object_class_t result = object_class_none;
             if(_name == (const uint8_t *)"File") {
-                return object_class_file;
+                result = object_class_file;
+            } else if(_name == (const uint8_t *)"Folder") {
+                result = object_class_folder;
             }
-            if(_name == (const uint8_t *)"Folder") {
-                return object_class_folder;
-            }
+
+            PA_ClearVariable(&p);//see .h of PA_GetObjectProperty -- same call _object_to_path already clears
+            PA_DisposeUnistring(&NAME);
+            return result;
         }
+        PA_DisposeUnistring(&NAME);
     }
     
     return object_class_none;
@@ -381,8 +419,9 @@ static bool _object_to_path(PA_ObjectRef f, std::string& path, int type) {
         C_TEXT pp;
         pp.setUTF8String((const uint8_t *)"platformPath", 12);
         PA_Unistring PLATFORMPATH = PA_CreateUnistring((PA_Unichar *)pp.getUTF16StringPtr());
-        
-        if(PA_GetObjectPropertyType(f, &PLATFORMPATH) == eVK_Unistring) {
+        bool propertyIsUnistring = (PA_GetObjectPropertyType(f, &PLATFORMPATH) == eVK_Unistring);
+
+        if(propertyIsUnistring) {
             
             PA_Variable p = PA_GetObjectProperty(f, &PLATFORMPATH);
             PA_Variable    cbparams[2];
@@ -406,16 +445,17 @@ static bool _object_to_path(PA_ObjectRef f, std::string& path, int type) {
             path = std::string((const char *)u8.c_str(), u8.size());
             
             PA_ClearVariable(&cbparams[0]);
-            PA_ClearVariable(&cbparams[1]);//PLATFORMPATH belongs to variable. no need to dispose
+            PA_ClearVariable(&cbparams[1]);//the *local* platformPath string belongs to variable p, no need to dispose separately
 #if VERSIONMAC
             PA_DisposeUnistring(&PATH);
             PA_ClearVariable(&_p);//see .h of PA_GetObjectProperty
 #endif
             PA_ClearVariable(&p);//see .h of PA_GetObjectProperty
+            PA_DisposeUnistring(&PLATFORMPATH);//the "platformPath" property-name key itself -- same create/dispose pattern as set_object_property
             
             return true;
         }
-    
+        PA_DisposeUnistring(&PLATFORMPATH);
     }
     
     return false;

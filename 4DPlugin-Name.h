@@ -23,29 +23,18 @@
 #include <shobjidl.h>
 #include <commctrl.h>
 #include <shellapi.h>
-#include <initguid.h> // for DEFINE_GUID
 #include <gdiplus.h>
+#include <commoncontrols.h> // official IImageList interface (replaces the hand-rolled vtable mirror below)
+#include <mutex>
 #pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "shell32.lib")
-struct IImageListVtbl;
-struct IImageList {
-    IImageListVtbl* lpVtbl;
-};
-struct IImageListVtbl {
-    HRESULT(STDMETHODCALLTYPE* QueryInterface)(IImageList*, REFIID, void**);
-    ULONG(STDMETHODCALLTYPE* AddRef)(IImageList*);
-    ULONG(STDMETHODCALLTYPE* Release)(IImageList*);
-    HRESULT(STDMETHODCALLTYPE* Add)(IImageList*, HBITMAP, HBITMAP, int*);
-    HRESULT(STDMETHODCALLTYPE* ReplaceIcon)(IImageList*, int, HICON, int*);
-    HRESULT(STDMETHODCALLTYPE* SetOverlayImage)(IImageList*, int, int);
-    HRESULT(STDMETHODCALLTYPE* Replace)(IImageList*, int, HBITMAP, HBITMAP);
-    HRESULT(STDMETHODCALLTYPE* AddMasked)(IImageList*, HBITMAP, COLORREF, int*);
-    HRESULT(STDMETHODCALLTYPE* Draw)(IImageList*, IMAGELISTDRAWPARAMS*);
-    HRESULT(STDMETHODCALLTYPE* Remove)(IImageList*, int);
-    HRESULT(STDMETHODCALLTYPE* GetIcon)(IImageList*, int, UINT, HICON*);
-    // Other methods omitted for brevity
-};
+// NOTE: the previous hand-rolled `IImageList`/`IImageListVtbl` structs (a partial, hand-ordered
+// vtable mirror) were removed in favor of <commoncontrols.h>'s official declaration, which is
+// the complete, correctly-ordered interface and IID_IImageList as maintained by the Windows SDK.
+// A hand-rolled partial vtable is only safe as long as no method used comes after an omitted one
+// in the real interface's declared order -- that held true here, but is fragile against any future
+// SDK/Windows revision and can't be verified by inspection alone.
 #endif
 
 #pragma mark -
