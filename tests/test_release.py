@@ -553,6 +553,28 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             self.assertEqual(self.calls(), [])
             self.git("update-index", "--no-" + flag, "--", self.generated[0])
 
+    def test_real_git_fsmonitor_valid_source_and_generated_flags_fail_before_api(self):
+        hook = self.local / ".git/offline-fsmonitor"
+        hook.write_text(f"#!{sys.executable}\nimport sys\n"
+                        "sys.stdout.buffer.write(b'offline-token\\0')\n")
+        hook.chmod(0o755)
+        self.git("config", "core.fsmonitor", str(hook))
+        for final, relative in ((False, str(source.PLIST)), (True, self.generated[0])):
+            with self.subTest(final=final, relative=relative):
+                if final:
+                    self.build()
+                self.git("update-index", "--fsmonitor-valid", "--", relative)
+                self.assertEqual(self.git("ls-files", "-v", "--", relative), "H " + relative)
+                self.assertEqual(self.git("ls-files", "-f", "--", relative), "h " + relative)
+                result = self.command("publish" if final else "preflight")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Hidden index/stat flags", result.stderr)
+                self.assertEqual(self.calls(), [])
+                self.git("update-index", "--no-fsmonitor-valid", "--", relative)
+        self.git("config", "--unset", "core.fsmonitor")
+        result = self.command("check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_generated_index_reversal_and_generated_symlinks_fail_before_api(self):
         self.build()
         target = self.local / self.generated[0]
